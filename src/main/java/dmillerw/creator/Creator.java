@@ -1,8 +1,10 @@
 package dmillerw.creator;
 
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import dmillerw.creator.client.ClientEventHandler;
+import dmillerw.creator.client.TabCache;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
@@ -44,5 +46,10 @@ public class Creator {
                 return Items.carrot_on_a_stick;
             }
         };
+    }
+
+    @Mod.EventHandler
+    public void postInit(FMLPostInitializationEvent event) {
+        TabCache.build();
     }
 }

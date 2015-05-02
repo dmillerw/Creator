@@ -1,13 +1,15 @@
 package dmillerw.creator.client.gui;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import dmillerw.creator.client.CreativeTab;
+import dmillerw.creator.client.TabCache;
 import dmillerw.creator.client.data.SortingMode;
 import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.InventoryEffectRenderer;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.inventory.Slot;
@@ -16,9 +18,9 @@ import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author dmillerw
@@ -29,11 +31,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
     private static final ResourceLocation TEXTURE = new ResourceLocation("creator:textures/gui/creative.png");
 
-    public static CreativeTabs[] tabCache;
-    public static List[] tabItemCache;
-    public static int selectedTab = 0;
-    public static int sortingMode = 0;
+    public static Set<String> favorites = Sets.newHashSet();
 
+    public static CreativeTab[] visableTabs = new CreativeTab[0];
+
+    public static String selectedTab = "";
+
+    public static int sortingMode = 0;
     public static int scrollOffset = 0;
 
     private static final int TAB_COUNT = 9;
@@ -61,27 +65,30 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
         this.xSize = 202;
         this.ySize = 208;
 
-        tabCache = new CreativeTabs[CreativeTabs.creativeTabArray.length - 2];
-        int index = 0;
-        for (int i=0; i<CreativeTabs.creativeTabArray.length; i++) {
-            final CreativeTabs tab = CreativeTabs.creativeTabArray[i];
-            if (tab.getTabLabel().equals("inventory") || tab.getTabLabel().equals("search")) {
-                continue;
-            }
-            tabCache[index] = tab;
-            index++;
+        visableTabs = new CreativeTab[TAB_COUNT];
+
+        updateVisableTabs();
+
+        if (selectedTab.isEmpty())
+            selectedTab = visableTabs[0].label;
+
+        update(true);
+    }
+
+    private void updateVisableTabs() {
+        int max = Math.min(TabCache.count(), sidebarScrollIndex + TAB_COUNT);
+
+        final List<String> allLabels = Lists.newLinkedList();
+
+        allLabels.addAll(favorites);
+        for (String tab : TabCache.labels) {
+            if (!(favorites.contains(tab)))
+                allLabels.add(tab);
         }
 
-        tabItemCache = new List[tabCache.length];
-        for (int i=0; i<tabCache.length; i++) {
-            final CreativeTabs tab = tabCache[i];
-
-            List<ItemStack> list = Lists.newArrayList();
-            tab.displayAllReleventItems(list);
-            tabItemCache[i] = list;
+        for (int i=sidebarScrollIndex; i<max; i++) {
+            visableTabs[i - sidebarScrollIndex] = TabCache.get(allLabels.get(i));
         }
-
-        ((Container)inventorySlots).update(tabItemCache[selectedTab], 0F);
     }
 
     @Override
@@ -93,17 +100,17 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
             drawCreativeTabHoveringText(I18n.format(mode.name().toLowerCase()), mouseX, mouseY);
         }
 
-        for (int i= sidebarScrollIndex; i<Math.min(tabCache.length, sidebarScrollIndex + TAB_COUNT); i++) {
+        for (int i = 0; i<visableTabs.length; i++) {
             int checkX = guiLeft + TAB_START_X;
-            int checkY = guiTop + TAB_START_Y + (20 * (i - sidebarScrollIndex));
+            int checkY = guiTop + TAB_START_Y + (20 * (i));
 
-            final CreativeTabs tab = tabCache[i];
+            final CreativeTab tab = visableTabs[i];
 
             RenderHelper.enableGUIStandardItemLighting();
-            drawItemStack(tab.getIconItemStack(), checkX, checkY, "");
+            drawItemStack(tab.icon, checkX, checkY, "");
 
             if (mouseX >= checkX && mouseX <= checkX + 16 && mouseY >= checkY && mouseY <= checkY + 20) {
-                drawCreativeTabHoveringText(I18n.format(tab.getTranslatedTabLabel()), mouseX, mouseY);
+                drawCreativeTabHoveringText(I18n.format("itemGroup." + tab.label), mouseX, mouseY);
             }
         }
     }
@@ -114,13 +121,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
         if (keycode == Keyboard.KEY_DOWN) {
             scrollOffset++;
-            update();
+            update(false);
         }
 
         if (keycode == Keyboard.KEY_UP) {
             scrollOffset--;
             if (scrollOffset < 0) scrollOffset = 0;
-            update();
+            update(false);
         }
     }
 
@@ -140,15 +147,26 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
             if (sortingMode >= SortingMode.values().length) {
                 sortingMode = 0;
             }
-            update();
+            update(true);
             mc.getSoundHandler().playSound(PositionedSoundRecord.func_147674_a(new ResourceLocation("gui.button.press"), 1.0F));
         } else {
-            for (int i= sidebarScrollIndex; i<Math.min(tabCache.length, sidebarScrollIndex + TAB_COUNT); i++) {
+            for (int i = 0; i<visableTabs.length; i++) {
                 int checkX = TAB_START_X;
-                int checkY = TAB_START_Y + (20 * (i - sidebarScrollIndex));
+                int checkY = TAB_START_Y + (20 * (i));
+
+                final CreativeTab tab = visableTabs[i];
 
                 if (inBounds(mouseX, mouseY, checkX, checkY, 16, 16)) {
-                    changeTab(i);
+                    if (button == 0) {
+                        changeTab(tab.label);
+                    } else if (button == 1) {
+                        if (favorites.contains(tab.label)) {
+                            favorites.remove(tab.label);
+                        } else {
+                            favorites.add(tab.label);
+                        }
+                        updateVisableTabs();
+                    }
                 }
             }
             mouseX += guiLeft;
@@ -157,13 +175,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
         }
     }
 
-    private void changeTab(int tab) {
+    private void changeTab(String tab) {
         selectedTab = tab;
-        update();
+        update(true);
     }
 
-    private void update() {
-        ((Container)inventorySlots).update(tabItemCache[selectedTab], 0);
+    private void update(boolean updateList) {
+        ((Container)inventorySlots).update(0F, updateList);
     }
 
     private boolean inBounds(int checkX, int checkY, int x, int y, int w, int h) {
@@ -175,13 +193,15 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
         if (sidebarScrollIndex < 0) {
             sidebarScrollIndex = 0;
         }
+        updateVisableTabs();
     }
 
     private void scrollTabSelectionDown() {
         sidebarScrollIndex++;
-        if (sidebarScrollIndex > tabCache.length - TAB_COUNT) {
-            sidebarScrollIndex = tabCache.length - TAB_COUNT;
+        if (sidebarScrollIndex > TabCache.count() - TAB_COUNT) {
+            sidebarScrollIndex = TabCache.count() - TAB_COUNT;
         }
+        updateVisableTabs();
     }
 
     @Override
@@ -190,18 +210,20 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
         mc.getTextureManager().bindTexture(TEXTURE);
         drawTexturedModalRect(guiLeft, guiTop, 0, 0, xSize, ySize);
 
-        for (int i = sidebarScrollIndex; i<Math.min(tabCache.length, sidebarScrollIndex + TAB_COUNT); i++) {
-            int checkX = guiLeft + TAB_START_X;
-            int checkY = guiTop + TAB_START_Y + (20 * (i - sidebarScrollIndex));
+        for (int i = 0; i<visableTabs.length; i++) {
+            int checkX = guiLeft + TAB_START_X - 1;
+            int checkY = guiTop + TAB_START_Y + (20 * (i) - 1);
 
-            if (selectedTab == i) {
-                drawTexturedModalRect(checkX, checkY, 0, 223, 16, 16);
+            if (selectedTab.equals(visableTabs[i].label)) {
+                drawTexturedModalRect(checkX, checkY, 0, 223, 18, 18);
+            } else if (favorites.contains(visableTabs[i].label)) {
+                drawTexturedModalRect(checkX, checkY, 18, 223, 18, 18);
             }
         }
 
         drawTexturedModalRect(guiLeft + MODE_X, guiTop + MODE_Y, 202, (MODE_HEIGHT * sortingMode), MODE_WIDTH, MODE_HEIGHT);
 
-        fontRendererObj.drawString(I18n.format(tabCache[selectedTab].getTranslatedTabLabel()), guiLeft + 34, guiTop + 7, 4210752);
+        fontRendererObj.drawString(I18n.format(I18n.format("itemGroup." + selectedTab)), guiLeft + 34, guiTop + 7, 4210752);
     }
 
     private void drawItemStack(ItemStack p_146982_1_, int p_146982_2_, int p_146982_3_, String p_146982_4_) {
@@ -219,6 +241,8 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
     public static class Container extends net.minecraft.inventory.Container {
 
+        private static List<ItemStack> itemList;
+
         public Container(EntityPlayer entityPlayer) {
             int i;
             for (i = 0; i < 9; ++i) {
@@ -228,10 +252,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
             }
         }
 
-        public void update(List<ItemStack> itemList, float scroll) {
+        public void update(float scroll, boolean updateList) {
             final SortingMode mode = SortingMode.values()[sortingMode];
-            List<ItemStack> copy = new ArrayList<ItemStack>(itemList);
-            Collections.sort(copy, mode);
+
+            if (updateList) {
+                itemList = Lists.newArrayList(TabCache.get(selectedTab).contents);
+                Collections.sort(itemList, mode);
+            }
 
             int i;
             for (i = 0; i < 9; ++i) {
@@ -239,7 +266,7 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
                     int i1 = (scrollOffset * 9) + (j + i * 9);
 
                     if (i1 >= 0 && i1 < itemList.size()) {
-                        INVENTORY.setInventorySlotContents(i1 - (scrollOffset * 9), copy.get(i1));
+                        INVENTORY.setInventorySlotContents(i1 - (scrollOffset * 9), itemList.get(i1));
                     } else {
                         INVENTORY.setInventorySlotContents(i1 - (scrollOffset * 9), null);
                     }
