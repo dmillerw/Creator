@@ -2,11 +2,13 @@ package dmillerw.creator.client.gui;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import dmillerw.creator.client.ClientEventHandler;
 import dmillerw.creator.client.CreativeTab;
 import dmillerw.creator.client.TabCache;
 import dmillerw.creator.client.data.SortingMode;
 import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.inventory.GuiContainerCreative;
 import net.minecraft.client.renderer.InventoryEffectRenderer;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
@@ -16,6 +18,7 @@ import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.util.Collections;
@@ -38,7 +41,7 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
     public static String selectedTab = "";
 
     public static int sortingMode = 0;
-    public static int scrollOffset = 0;
+    public static float currentScroll = 0F;
 
     private static final int TAB_COUNT = 9;
     private static final int TAB_START_X = 10;
@@ -57,10 +60,21 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
     private static final int MODE_WIDTH = 14;
     private static final int MODE_HEIGHT = 11;
 
+    private static final int SCROLL_BAR_WIDTH = 14;
+    private static final int SCROLL_BAR_HEIGHT = 162;
+    private static final int SCROLL_BAR_X = 181;
+    private static final int SCROLL_BAR_Y = 17;
+
+    private static final int SLOT_COUNT = 72;
+
     private int sidebarScrollIndex = 0;
+    private boolean wasClicking = false;
+    private boolean isScrolling = false;
 
     public GuiBetterCreative(EntityPlayer entityPlayer) {
         super(new Container(entityPlayer));
+
+        entityPlayer.openContainer = this.inventorySlots;
 
         this.xSize = 202;
         this.ySize = 208;
@@ -93,6 +107,34 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partial) {
+        // Mouse scroll-bar detection
+        boolean flag = Mouse.isButtonDown(0);
+
+        final int barX = guiLeft + SCROLL_BAR_X;
+        final int barY = guiTop + SCROLL_BAR_Y;
+        final int barXEnd = barX + SCROLL_BAR_WIDTH;
+        final int barYEnd = barY + SCROLL_BAR_HEIGHT;
+
+        if (!wasClicking && flag && inBounds(mouseX, mouseY, guiLeft + SCROLL_BAR_X, guiTop + SCROLL_BAR_Y, guiLeft + SCROLL_BAR_X + SCROLL_BAR_WIDTH, guiTop + SCROLL_BAR_Y + SCROLL_BAR_HEIGHT)) {
+            this.isScrolling = Container.getItemCount() > SLOT_COUNT;
+        }
+
+        if (!flag)
+            this.isScrolling = false;
+
+        this.wasClicking = flag;
+
+        if (this.isScrolling) {
+            currentScroll = ((float)(mouseY - barY) - 7.5F) / ((float)(barYEnd - barY) - 15F);
+
+            if (currentScroll < 0F)
+                currentScroll = 0F;
+            if (currentScroll > 1F)
+                currentScroll = 1F;
+
+            ((Container)inventorySlots).update(currentScroll, false);
+        }
+
         super.drawScreen(mouseX, mouseY, partial);
 
         final SortingMode mode = SortingMode.values()[sortingMode];
@@ -119,15 +161,34 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
     protected void keyTyped(char c, int keycode) {
         super.keyTyped(c, keycode);
 
-        if (keycode == Keyboard.KEY_DOWN) {
-            scrollOffset++;
-            update(false);
+        if (keycode == Keyboard.KEY_Q) {
+            ClientEventHandler.allowNext = true;
+            mc.displayGuiScreen(new GuiContainerCreative(mc.thePlayer));
         }
+    }
 
-        if (keycode == Keyboard.KEY_UP) {
-            scrollOffset--;
-            if (scrollOffset < 0) scrollOffset = 0;
-            update(false);
+    @Override
+    public void handleMouseInput() {
+        super.handleMouseInput();
+
+        int delta = Mouse.getEventDWheel();
+
+        if (delta != 0 && Container.getItemCount() > SLOT_COUNT) {
+            int lines = Container.getItemCount() / 9 - 8;
+
+            if (delta > 0)
+                delta = 1;
+            else if (delta < 0)
+                delta = -1;
+
+            currentScroll = (float)((double)currentScroll - (double)delta / lines);
+
+            if (currentScroll < 0F)
+                currentScroll = 0F;
+            if (currentScroll > 1F)
+                currentScroll = 1F;
+
+            ((Container)inventorySlots).update(currentScroll, false);
         }
     }
 
@@ -177,6 +238,7 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
     private void changeTab(String tab) {
         selectedTab = tab;
+        currentScroll = 0F;
         update(true);
     }
 
@@ -210,6 +272,7 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
         mc.getTextureManager().bindTexture(TEXTURE);
         drawTexturedModalRect(guiLeft, guiTop, 0, 0, xSize, ySize);
 
+        // Tab backgrounds
         for (int i = 0; i<visableTabs.length; i++) {
             int checkX = guiLeft + TAB_START_X - 1;
             int checkY = guiTop + TAB_START_Y + (20 * (i) - 1);
@@ -221,8 +284,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
             }
         }
 
+        int scrollBarY = (int) (guiTop + SCROLL_BAR_Y + 1 + ((float)(SCROLL_BAR_HEIGHT - 17) * currentScroll));
+        drawTexturedModalRect(guiLeft + SCROLL_BAR_X + 1, scrollBarY, 0, 208, 12, 15);
+
+        // Sort mode button
         drawTexturedModalRect(guiLeft + MODE_X, guiTop + MODE_Y, 202, (MODE_HEIGHT * sortingMode), MODE_WIDTH, MODE_HEIGHT);
 
+        // Tab label
         fontRendererObj.drawString(I18n.format(I18n.format("itemGroup." + selectedTab)), guiLeft + 34, guiTop + 7, 4210752);
     }
 
@@ -243,6 +311,10 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
 
         private static List<ItemStack> itemList;
 
+        public static int getItemCount() {
+            return itemList == null || itemList.isEmpty() ? 0 : itemList.size();
+        }
+
         public Container(EntityPlayer entityPlayer) {
             int i;
             for (i = 0; i < 9; ++i) {
@@ -250,10 +322,20 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
                     this.addSlotToContainer(new Slot(INVENTORY, i * 9 + j, 34 + j * 18, 18 + i * 18));
                 }
             }
+
+            // Player Hotbar
+            for (i = 0; i < 9; ++i) {
+                this.addSlotToContainer(new Slot(entityPlayer.inventory, i, 34 + i * 18, 184));
+            }
         }
 
         public void update(float scroll, boolean updateList) {
+            final int lines = getItemCount() / 9 - 8;
+            int offset = (int)((double)(scroll * (float)lines) + 0.5D);
             final SortingMode mode = SortingMode.values()[sortingMode];
+
+            if (offset < 0)
+                offset = 0;
 
             if (updateList) {
                 itemList = Lists.newArrayList(TabCache.get(selectedTab).contents);
@@ -263,12 +345,13 @@ public class GuiBetterCreative extends InventoryEffectRenderer {
             int i;
             for (i = 0; i < 9; ++i) {
                 for (int j = 0; j < 8; ++j) {
-                    int i1 = (scrollOffset * 9) + (j + i * 9);
+                    int i1 = j + (i + offset) * 9;
+//                    int i1 = (j + i * 9);
 
                     if (i1 >= 0 && i1 < itemList.size()) {
-                        INVENTORY.setInventorySlotContents(i1 - (scrollOffset * 9), itemList.get(i1));
+                        INVENTORY.setInventorySlotContents(j + i * 9, itemList.get(i1));
                     } else {
-                        INVENTORY.setInventorySlotContents(i1 - (scrollOffset * 9), null);
+                        INVENTORY.setInventorySlotContents(j + i * 9, null);
                     }
                 }
             }

@@ -11,8 +11,15 @@ import net.minecraftforge.client.event.GuiOpenEvent;
  */
 public class ClientEventHandler {
 
+    public static boolean allowNext = false;
+
     @SubscribeEvent
     public void onGuiOpen(GuiOpenEvent event) {
+        if (allowNext) {
+            allowNext = false;
+            return;
+        }
+
         if (event.gui instanceof GuiContainerCreative) {
             event.gui = new GuiBetterCreative(Minecraft.getMinecraft().thePlayer);
         }
